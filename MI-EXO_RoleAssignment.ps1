@@ -1,7 +1,7 @@
 # ====== Part 1 ======
 # Grant App Role Assignment (Exchange.ManageAsApp) to the Managed Identity in Entra ID
 
-Connect-MgGraph
+Connect-MgGraph -Scopes AppRoleAssignment.ReadWrite.All,Application.Read.All,RoleManagement.ReadWrite.Directory
 $MI_ID = '<YOUR-MI-ObjectID>'
 # Get the Service Principal for Exchange Online
 $exoSp = Get-MgServicePrincipal -Filter "AppId eq '00000002-0000-0ff1-ce00-000000000000'"
