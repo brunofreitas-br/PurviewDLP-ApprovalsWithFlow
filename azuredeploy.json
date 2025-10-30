@@ -5,34 +5,23 @@
     "FunctionAppName": {
       "type": "string",
       "defaultValue": "",
-      "metadata": { "description": "Nome da Function App (globalmente único em *.azurewebsites.net). Deixe vazio para gerar automaticamente." }
+      "metadata": { "description": "Function App name (unique in *.azurewebsites.net). Leave blank to auto-generate." }
     },
     "EXO_ORG": {
       "type": "string",
-      "metadata": { "description": "Seu tenant EXO (ex.: contoso.onmicrosoft.com)" }
+      "metadata": { "description": "Exchange Online tenant (e.g., contoso.onmicrosoft.com)" }
     }
   },
   "variables": {
-    // Nome base caso o usuário deixe em branco
     "functionNameFallback": "[concat('quarantinerelease', uniqueString(resourceGroup().id))]",
     "functionNameRaw": "[if(greater(length(parameters('FunctionAppName')), 0), parameters('FunctionAppName'), variables('functionNameFallback'))]",
     "functionName": "[toLower(variables('functionNameRaw'))]",
-
-    // Sanitização para recursos com restrições de nome (apenas letras/números)
     "nameAlnum1": "[replace(variables('functionName'), '-', '')]",
     "nameAlnum2": "[replace(variables('nameAlnum1'), '_', '')]",
     "nameAlnum3": "[replace(variables('nameAlnum2'), '.', '')]",
-
-    // Storage (<=24 chars, só minúsculas e números)
     "storageAccountName": "[concat(substring(variables('nameAlnum3'), 0, 18), 'sa', substring(uniqueString(resourceGroup().id), 0, 4))]",
-
-    // Key Vault (3–24, só letras/números)
-    "keyVaultName": "[concat(substring(variables('nameAlnum3'), 0, 20), 'kv')]",
-
     "hostingPlanName": "[concat('ASP-', variables('functionName'))]",
     "storageSuffix": "[environment().suffixes.storage]",
-
-    // Run-From-Package URL (ZIP ao lado do template)
     "templateBaseUri": "[uri(deployment().properties.templateLink.uri, '.')]",
     "packageUri": "[uri(variables('templateBaseUri'), 'QuarantineRelease.zip')]"
   },
@@ -43,7 +32,10 @@
       "name": "[variables('functionName')]",
       "location": "[resourceGroup().location]",
       "kind": "web",
-      "properties": { "Application_Type": "web", "ApplicationId": "[variables('functionName')]" }
+      "properties": {
+        "Application_Type": "web",
+        "ApplicationId": "[variables('functionName')]"
+      }
     },
     {
       "type": "Microsoft.Web/serverfarms",
@@ -87,6 +79,15 @@
       "properties": { "cors": { "corsRules": [] }, "deleteRetentionPolicy": { "enabled": false } }
     },
     {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2019-06-01",
+      "name": "[concat(variables('storageAccountName'), '/default/', tolower(variables('functionName')))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ],
+      "properties": { "shareQuota": 5120 }
+    },
+    {
       "type": "Microsoft.Web/sites",
       "apiVersion": "2018-11-01",
       "name": "[variables('functionName')]",
@@ -102,7 +103,10 @@
         "httpsOnly": true,
         "clientAffinityEnabled": true,
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-        "siteConfig": { "linuxFxVersion": "PowerShell|7.4", "alwaysOn": true }
+        "siteConfig": {
+          "linuxFxVersion": "PowerShell|7.4",
+          "alwaysOn": true
+        }
       },
       "resources": [
         {
@@ -115,40 +119,14 @@
             "FUNCTIONS_WORKER_RUNTIME": "powershell",
             "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('microsoft.insights/components', variables('functionName')), '2015-05-01').ConnectionString]",
             "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', variables('functionName')), '2015-05-01').InstrumentationKey]",
-
             "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=', toLower(variables('storageAccountName')),';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value, ';EndpointSuffix=', toLower(variables('storageSuffix')))]",
-
             "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', toLower(variables('storageAccountName')),';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value, ';EndpointSuffix=', toLower(variables('storageSuffix')))]",
             "WEBSITE_CONTENTSHARE": "[variables('functionName')]",
-
             "WEBSITE_RUN_FROM_PACKAGE": "[variables('packageUri')]",
-
             "EXO_ORG": "[parameters('EXO_ORG')]"
           }
         }
       ]
-    },
-    {
-      "type": "Microsoft.KeyVault/vaults",
-      "apiVersion": "2016-10-01",
-      "name": "[variables('keyVaultName')]",
-      "location": "[resourceGroup().location]",
-      "dependsOn": [ "[resourceId('Microsoft.Web/sites', variables('functionName'))]" ],
-      "properties": {
-        "sku": { "family": "A", "name": "Standard" },
-        "tenantId": "[subscription().tenantId]",
-        "accessPolicies": [
-          {
-            "tenantId": "[subscription().tenantId]",
-            "objectId": "[reference(resourceId('Microsoft.Web/sites', variables('functionName')),'2019-08-01','full').identity.principalId]",
-            "permissions": { "secrets": [ "get", "list" ] }
-          }
-        ],
-        "enabledForDeployment": false,
-        "enabledForDiskEncryption": false,
-        "enabledForTemplateDeployment": true,
-        "enableSoftDelete": true
-      }
     }
   ],
   "outputs": {
