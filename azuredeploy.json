@@ -10,6 +10,11 @@
     "EXO_ORG": {
       "type": "string",
       "metadata": { "description": "Exchange Online tenant (e.g., contoso.onmicrosoft.com)" }
+    },
+    "PackageUri": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/brunofreitas-br/PurviewDLP-ApprovalsWithFlow/main/QuarantineRelease.zip",
+      "metadata": { "description": "Public URL to the Function ZIP (WEBSITE_RUN_FROM_PACKAGE)." }
     }
   },
   "variables": {
@@ -19,11 +24,10 @@
     "nameAlnum1": "[replace(variables('functionName'), '-', '')]",
     "nameAlnum2": "[replace(variables('nameAlnum1'), '_', '')]",
     "nameAlnum3": "[replace(variables('nameAlnum2'), '.', '')]",
-    "storageAccountName": "[concat(substring(variables('nameAlnum3'), 0, 18), 'sa', substring(uniqueString(resourceGroup().id), 0, 4))]",
+    "paddedName": "[concat(variables('nameAlnum3'),'00000000000000000000')]",
+    "storageAccountName": "[concat(substring(variables('paddedName'), 0, 18), 'sa', substring(uniqueString(resourceGroup().id), 0, 4))]",
     "hostingPlanName": "[concat('ASP-', variables('functionName'))]",
-    "storageSuffix": "[environment().suffixes.storage]",
-    "templateBaseUri": "[uri(deployment().properties.templateLink.uri, '.')]",
-    "packageUri": "[uri(variables('templateBaseUri'), 'QuarantineRelease.zip')]"
+    "storageSuffix": "[environment().suffixes.storage]"
   },
   "resources": [
     {
@@ -32,10 +36,7 @@
       "name": "[variables('functionName')]",
       "location": "[resourceGroup().location]",
       "kind": "web",
-      "properties": {
-        "Application_Type": "web",
-        "ApplicationId": "[variables('functionName')]"
-      }
+      "properties": { "Application_Type": "web", "ApplicationId": "[variables('functionName')]" }
     },
     {
       "type": "Microsoft.Web/serverfarms",
@@ -45,7 +46,6 @@
       "kind": "elastic",
       "sku": { "tier": "ElasticPremium", "name": "EP1" },
       "properties": {
-        "reserved": true,
         "targetWorkerCount": "2",
         "targetWorkerSizeId": "3",
         "maximumElasticWorkerCount": "20"
@@ -82,9 +82,7 @@
       "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
       "apiVersion": "2019-06-01",
       "name": "[concat(variables('storageAccountName'), '/default/', tolower(variables('functionName')))]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ],
+      "dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]" ],
       "properties": { "shareQuota": 5120 }
     },
     {
@@ -92,7 +90,7 @@
       "apiVersion": "2018-11-01",
       "name": "[variables('functionName')]",
       "location": "[resourceGroup().location]",
-      "kind": "functionapp,linux",
+      "kind": "functionapp",
       "identity": { "type": "SystemAssigned" },
       "dependsOn": [
         "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
@@ -104,8 +102,8 @@
         "clientAffinityEnabled": true,
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
         "siteConfig": {
-          "linuxFxVersion": "PowerShell|7.4",
-          "alwaysOn": true
+          "alwaysOn": true,
+          "powerShellVersion": "7.4"
         }
       },
       "resources": [
@@ -122,7 +120,7 @@
             "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=', toLower(variables('storageAccountName')),';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value, ';EndpointSuffix=', toLower(variables('storageSuffix')))]",
             "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', toLower(variables('storageAccountName')),';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value, ';EndpointSuffix=', toLower(variables('storageSuffix')))]",
             "WEBSITE_CONTENTSHARE": "[variables('functionName')]",
-            "WEBSITE_RUN_FROM_PACKAGE": "[variables('packageUri')]",
+            "WEBSITE_RUN_FROM_PACKAGE": "[parameters('PackageUri')]",
             "EXO_ORG": "[parameters('EXO_ORG')]"
           }
         }
@@ -131,6 +129,6 @@
   ],
   "outputs": {
     "functionAppName": { "type": "string", "value": "[variables('functionName')]" },
-    "runFromPackage": { "type": "string", "value": "[variables('packageUri')]" }
+    "runFromPackage": { "type": "string", "value": "[parameters('PackageUri')]" }
   }
 }
